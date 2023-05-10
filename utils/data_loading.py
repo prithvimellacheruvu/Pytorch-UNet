@@ -15,24 +15,27 @@ from tqdm import tqdm
 
 def load_image(filename):
     ext = splitext(filename)[1]
-    if ext == '.npy':
-        return Image.fromarray(np.load(filename))
-    elif ext in ['.pt', '.pth']:
-        return Image.fromarray(torch.load(filename).numpy())
+    if ext == '.bin':
+        grid = np.zeros((61,61,25))   
+        with open(filename, mode='rb') as infile:
+            for i in range(61):
+                for j in range(61):
+                    for k in range(25):
+                        tempRow = infile.read(1)
+                        for l in range(1):
+                            grid[i][j][k] = tempRow[l]
+        return grid
     else:
-        return Image.open(filename)
+        raise ValueError('File not a .bin')
 
 
 def unique_mask_values(idx, mask_dir, mask_suffix):
     mask_file = list(mask_dir.glob(idx + mask_suffix + '.*'))[0]
     mask = np.asarray(load_image(mask_file))
-    if mask.ndim == 2:
+    if mask.ndim == 3:
         return np.unique(mask)
-    elif mask.ndim == 3:
-        mask = mask.reshape(-1, mask.shape[-1])
-        return np.unique(mask, axis=0)
     else:
-        raise ValueError(f'Loaded masks should have 2 or 3 dimensions, found {mask.ndim}')
+        raise ValueError(f'Loaded masks should have 3 dimensions, found {mask.ndim}')
 
 
 class BasicDataset(Dataset):
@@ -48,47 +51,19 @@ class BasicDataset(Dataset):
             raise RuntimeError(f'No input file found in {images_dir}, make sure you put your images there')
 
         logging.info(f'Creating dataset with {len(self.ids)} examples')
-        logging.info('Scanning mask files to determine unique values')
-        with Pool() as p:
-            unique = list(tqdm(
-                p.imap(partial(unique_mask_values, mask_dir=self.mask_dir, mask_suffix=self.mask_suffix), self.ids),
-                total=len(self.ids)
-            ))
+        # logging.info('Scanning mask files to determine unique values')
+        # with Pool() as p:
+        #     unique = list(tqdm(
+        #         p.imap(partial(unique_mask_values, mask_dir=self.mask_dir, mask_suffix=self.mask_suffix), self.ids),
+        #         total=len(self.ids)
+        #     ))
 
-        self.mask_values = list(sorted(np.unique(np.concatenate(unique), axis=0).tolist()))
+        # self.mask_values = list(sorted(np.unique(np.concatenate(unique), axis=0).tolist()))
+        self.mask_values = list([0, 1])
         logging.info(f'Unique mask values: {self.mask_values}')
 
     def __len__(self):
         return len(self.ids)
-
-    @staticmethod
-    def preprocess(mask_values, pil_img, scale, is_mask):
-        w, h = pil_img.size
-        newW, newH = int(scale * w), int(scale * h)
-        assert newW > 0 and newH > 0, 'Scale is too small, resized images would have no pixel'
-        pil_img = pil_img.resize((newW, newH), resample=Image.NEAREST if is_mask else Image.BICUBIC)
-        img = np.asarray(pil_img)
-
-        if is_mask:
-            mask = np.zeros((newH, newW), dtype=np.int64)
-            for i, v in enumerate(mask_values):
-                if img.ndim == 2:
-                    mask[img == v] = i
-                else:
-                    mask[(img == v).all(-1)] = i
-
-            return mask
-
-        else:
-            if img.ndim == 2:
-                img = img[np.newaxis, ...]
-            else:
-                img = img.transpose((2, 0, 1))
-
-            if (img > 1).any():
-                img = img / 255.0
-
-            return img
 
     def __getitem__(self, idx):
         name = self.ids[idx]
@@ -103,12 +78,9 @@ class BasicDataset(Dataset):
         assert img.size == mask.size, \
             f'Image and mask {name} should be the same size, but are {img.size} and {mask.size}'
 
-        img = self.preprocess(self.mask_values, img, self.scale, is_mask=False)
-        mask = self.preprocess(self.mask_values, mask, self.scale, is_mask=True)
-
         return {
-            'image': torch.as_tensor(img.copy()).float().contiguous(),
-            'mask': torch.as_tensor(mask.copy()).long().contiguous()
+            'image': torch.as_tensor(img.copy()).float().contiguous().unsqueeze(0),
+            'mask': torch.as_tensor(mask.copy()).long().contiguous().unsqueeze(0)
         }
 
 

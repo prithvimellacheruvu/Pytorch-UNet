@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
 
-from utils.data_loading import BasicDataset
+from utils.data_loading import BasicDataset, load_image
 from unet import UNet
 from utils.utils import plot_img_and_mask
 
@@ -18,13 +18,13 @@ def predict_img(net,
                 scale_factor=1,
                 out_threshold=0.5):
     net.eval()
-    img = torch.from_numpy(BasicDataset.preprocess(None, full_img, scale_factor, is_mask=False))
-    img = img.unsqueeze(0)
+    img = torch.from_numpy(full_img)
+    img = img.unsqueeze(0).unsqueeze(0)
     img = img.to(device=device, dtype=torch.float32)
 
     with torch.no_grad():
         output = net(img).cpu()
-        output = F.interpolate(output, (full_img.size[1], full_img.size[0]), mode='bilinear')
+        output = F.interpolate(output, (full_img.shape[2], full_img.shape[1], full_img.shape[0]), mode='trilinear')
         if net.n_classes > 1:
             mask = output.argmax(dim=1)
         else:
@@ -54,26 +54,36 @@ def get_args():
 
 def get_output_filenames(args):
     def _generate_name(fn):
-        return f'{os.path.splitext(fn)[0]}_OUT.png'
+        return f'{os.path.splitext(fn)[0]}_OUT.bin'
 
     return args.output or list(map(_generate_name, args.input))
 
 
-def mask_to_image(mask: np.ndarray, mask_values):
+def mask_to_grid(mask: np.ndarray, mask_values):
     if isinstance(mask_values[0], list):
         out = np.zeros((mask.shape[-2], mask.shape[-1], len(mask_values[0])), dtype=np.uint8)
     elif mask_values == [0, 1]:
-        out = np.zeros((mask.shape[-2], mask.shape[-1]), dtype=bool)
+        out = np.zeros((mask.shape[-3], mask.shape[-2], mask.shape[-1]), dtype=bool)
     else:
-        out = np.zeros((mask.shape[-2], mask.shape[-1]), dtype=np.uint8)
+        out = np.zeros((mask.shape[-3], mask.shape[-2], mask.shape[-1]), dtype=np.uint8)
 
-    if mask.ndim == 3:
+    if mask.ndim == 4:
         mask = np.argmax(mask, axis=0)
 
     for i, v in enumerate(mask_values):
         out[mask == i] = v
 
-    return Image.fromarray(out)
+    return out
+
+def saveGrid(mask: np.ndarray, filename: str):
+    with open(filename, 'wb') as outfile:
+        for i in range(61):
+            for j in range(61):
+                for k in range(25):
+                    temp_row = bytearray(1)
+                    for l in range(1):
+                        temp_row[l] = mask[k][j][i]
+                    outfile.write(temp_row)
 
 
 if __name__ == '__main__':
@@ -83,7 +93,7 @@ if __name__ == '__main__':
     in_files = args.input
     out_files = get_output_filenames(args)
 
-    net = UNet(n_channels=3, n_classes=args.classes, bilinear=args.bilinear)
+    net = UNet(n_channels=1, n_classes=args.classes, bilinear=args.bilinear)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Loading model {args.model}')
@@ -98,7 +108,8 @@ if __name__ == '__main__':
 
     for i, filename in enumerate(in_files):
         logging.info(f'Predicting image {filename} ...')
-        img = Image.open(filename)
+        # img = Image.open(filename)
+        img = load_image(filename)
 
         mask = predict_img(net=net,
                            full_img=img,
@@ -108,8 +119,9 @@ if __name__ == '__main__':
 
         if not args.no_save:
             out_filename = out_files[i]
-            result = mask_to_image(mask, mask_values)
-            result.save(out_filename)
+            # result = mask_to_image(mask, mask_values)
+            # result.save(out_filename)
+            saveGrid(mask, out_filename)
             logging.info(f'Mask saved to {out_filename}')
 
         if args.viz:

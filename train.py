@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as TF
+import torch.cuda
 from pathlib import Path
 from torch import optim
 from torch.utils.data import DataLoader, random_split
@@ -23,6 +24,7 @@ dir_img = Path('./data/imgs/')
 dir_mask = Path('./data/masks/')
 dir_checkpoint = Path('./checkpoints/')
 
+argparse.ArgumentParser
 
 def train_model(
         model,
@@ -40,9 +42,10 @@ def train_model(
 ):
     # 1. Create dataset
     try:
-        dataset = CarvanaDataset(dir_img, dir_mask, img_scale)
-    except (AssertionError, RuntimeError, IndexError):
         dataset = BasicDataset(dir_img, dir_mask, img_scale)
+    except (AssertionError, RuntimeError, IndexError):
+        print("Dataset Load error")
+        return 0
 
     # 2. Split into train / validation partitions
     n_val = int(len(dataset) * val_percent)
@@ -94,20 +97,22 @@ def train_model(
                     f'but loaded images have {images.shape[1]} channels. Please check that ' \
                     'the images are loaded correctly.'
 
-                images = images.to(device=device, dtype=torch.float32, memory_format=torch.channels_last)
+                images = images.to(device=device, dtype=torch.float32)
                 true_masks = true_masks.to(device=device, dtype=torch.long)
 
                 with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
                     masks_pred = model(images)
                     if model.n_classes == 1:
-                        loss = criterion(masks_pred.squeeze(1), true_masks.float())
+                        loss = criterion(masks_pred.squeeze(1), true_masks.squeeze(1).float())
                         loss += dice_loss(F.sigmoid(masks_pred.squeeze(1)), true_masks.float(), multiclass=False)
                     else:
-                        loss = criterion(masks_pred, true_masks)
+                        loss = criterion(masks_pred, true_masks.squeeze(1))
                         loss += dice_loss(
                             F.softmax(masks_pred, dim=1).float(),
-                            F.one_hot(true_masks, model.n_classes).permute(0, 3, 1, 2).float(),
+                            F.one_hot(true_masks.squeeze(1), model.n_classes).permute(0, 4, 1, 2, 3).float(),
                             multiclass=True
+                            # F.one_hot(true_masks.squeeze(1), model.n_classes).permute(0, 3, 1, 2).float(),
+                            # multiclass=True
                         )
 
                 optimizer.zero_grad(set_to_none=True)
@@ -193,8 +198,8 @@ if __name__ == '__main__':
     # Change here to adapt to your data
     # n_channels=3 for RGB images
     # n_classes is the number of probabilities you want to get per pixel
-    model = UNet(n_channels=3, n_classes=args.classes, bilinear=args.bilinear)
-    model = model.to(memory_format=torch.channels_last)
+    model = UNet(n_channels=1, n_classes=args.classes, bilinear=args.bilinear)
+    # model = model.to(memory_format=torch.channels_last)
 
     logging.info(f'Network:\n'
                  f'\t{model.n_channels} input channels\n'
@@ -208,30 +213,30 @@ if __name__ == '__main__':
         logging.info(f'Model loaded from {args.load}')
 
     model.to(device=device)
-    try:
-        train_model(
-            model=model,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            learning_rate=args.lr,
-            device=device,
-            img_scale=args.scale,
-            val_percent=args.val / 100,
-            amp=args.amp
-        )
-    except torch.cuda.OutOfMemoryError:
-        logging.error('Detected OutOfMemoryError! '
-                      'Enabling checkpointing to reduce memory usage, but this slows down training. '
-                      'Consider enabling AMP (--amp) for fast and memory efficient training')
-        torch.cuda.empty_cache()
-        model.use_checkpointing()
-        train_model(
-            model=model,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            learning_rate=args.lr,
-            device=device,
-            img_scale=args.scale,
-            val_percent=args.val / 100,
-            amp=args.amp
-        )
+    # try:
+    train_model(
+        model=model,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.lr,
+        device=device,
+        img_scale=args.scale,
+        val_percent=args.val / 100,
+        amp=args.amp
+    )
+    # except torch.cuda.OutOfMemoryError:
+    #     logging.error('Detected OutOfMemoryError! '
+    #                   'Enabling checkpointing to reduce memory usage, but this slows down training. '
+    #                   'Consider enabling AMP (--amp) for fast and memory efficient training')
+    #     torch.cuda.empty_cache()
+    #     model.use_checkpointing()
+    #     train_model(
+    #         model=model,
+    #         epochs=args.epochs,
+    #         batch_size=args.batch_size,
+    #         learning_rate=args.lr,
+    #         device=device,
+    #         img_scale=args.scale,
+    #         val_percent=args.val / 100,
+    #         amp=args.amp
+    #     )
