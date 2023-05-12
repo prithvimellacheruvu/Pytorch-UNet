@@ -16,14 +16,34 @@ from tqdm import tqdm
 def load_image(filename):
     ext = splitext(filename)[1]
     if ext == '.bin':
-        grid = np.zeros((61,61,25))   
+        gridOG = np.zeros((1,61,61,25))   
+        gridStartEnd = np.zeros((1,61,61,25))   
+        with open(filename, mode='rb') as infile:
+            for i in range(61):
+                for j in range(61):
+                    for k in range(25):
+                        tempRow = infile.read(2)
+                        for l in range(2):
+                            if l == 0 :
+                                gridOG[0][i][j][k] = tempRow[l]
+                            if l == 1 :
+                                gridStartEnd[0][i][j][k] = tempRow[l]
+        OG = torch.as_tensor(gridOG.copy()).float().contiguous()
+        StartEnd = torch.as_tensor(gridStartEnd.copy()).float().contiguous()
+        return torch.cat((OG, StartEnd), dim=0)
+    else:
+        raise ValueError('File not a .bin')
+def load_mask(filename):
+    ext = splitext(filename)[1]
+    if ext == '.bin':
+        grid = np.zeros((1,61,61,25))   
         with open(filename, mode='rb') as infile:
             for i in range(61):
                 for j in range(61):
                     for k in range(25):
                         tempRow = infile.read(1)
                         for l in range(1):
-                            grid[i][j][k] = tempRow[l]
+                            grid[0][i][j][k] = tempRow[l]
         return grid
     else:
         raise ValueError('File not a .bin')
@@ -72,15 +92,17 @@ class BasicDataset(Dataset):
 
         assert len(img_file) == 1, f'Either no image or multiple images found for the ID {name}: {img_file}'
         assert len(mask_file) == 1, f'Either no mask or multiple masks found for the ID {name}: {mask_file}'
-        mask = load_image(mask_file[0])
+        mask = load_mask(mask_file[0])
         img = load_image(img_file[0])
 
-        assert img.size == mask.size, \
-            f'Image and mask {name} should be the same size, but are {img.size} and {mask.size}'
+        # %%%%%%%%%%%% Concatenate the inputMap & startGoal positions map along dim=1 %%%%%%%%%%%%%%
+
+        # assert img.size == mask.size, \
+        #     f'Image and mask {name} should be the same size, but are {img.size} and {mask.size}'
 
         return {
-            'image': torch.as_tensor(img.copy()).float().contiguous().unsqueeze(0),
-            'mask': torch.as_tensor(mask.copy()).long().contiguous().unsqueeze(0)
+            'image': img,
+            'mask': torch.as_tensor(mask.copy()).long().contiguous()
         }
 
 

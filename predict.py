@@ -18,13 +18,16 @@ def predict_img(net,
                 scale_factor=1,
                 out_threshold=0.5):
     net.eval()
-    img = torch.from_numpy(full_img)
-    img = img.unsqueeze(0).unsqueeze(0)
+    # img = torch.from_numpy(full_img)
+    # img = img.unsqueeze(0).unsqueeze(0)
+    img = full_img
+    img = img.unsqueeze(0)
     img = img.to(device=device, dtype=torch.float32)
 
     with torch.no_grad():
         output = net(img).cpu()
-        output = F.interpolate(output, (full_img.shape[2], full_img.shape[1], full_img.shape[0]), mode='trilinear')
+        # %%%%%%%%%%% The below line reshapes to the og input img shape %%%%%%%%%%%%
+        output = F.interpolate(output, (full_img.shape[3], full_img.shape[2], full_img.shape[1]), mode='trilinear')
         if net.n_classes > 1:
             mask = output.argmax(dim=1)
         else:
@@ -93,7 +96,7 @@ if __name__ == '__main__':
     in_files = args.input
     out_files = get_output_filenames(args)
 
-    net = UNet(n_channels=1, n_classes=args.classes, bilinear=args.bilinear)
+    net = UNet(n_channels=2, n_classes=args.classes, bilinear=args.bilinear)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Loading model {args.model}')
