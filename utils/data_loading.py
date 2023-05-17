@@ -30,7 +30,7 @@ def load_image(filename):
                                 gridStartEnd[0][i][j][k] = tempRow[l]
         OG = torch.as_tensor(gridOG.copy()).float().contiguous()
         StartEnd = torch.as_tensor(gridStartEnd.copy()).float().contiguous()
-        return torch.cat((OG, StartEnd), dim=0)
+        return torch.cat((OG, StartEnd), dim=0), gridOG.squeeze(0)
     else:
         raise ValueError('File not a .bin')
 def load_mask(filename):
@@ -93,7 +93,7 @@ class BasicDataset(Dataset):
         assert len(img_file) == 1, f'Either no image or multiple images found for the ID {name}: {img_file}'
         assert len(mask_file) == 1, f'Either no mask or multiple masks found for the ID {name}: {mask_file}'
         mask = load_mask(mask_file[0])
-        img = load_image(img_file[0])
+        img, gridOG = load_image(img_file[0])
 
         # %%%%%%%%%%%% Concatenate the inputMap & startGoal positions map along dim=1 %%%%%%%%%%%%%%
 

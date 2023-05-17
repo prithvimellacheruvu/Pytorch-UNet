@@ -78,14 +78,17 @@ def mask_to_grid(mask: np.ndarray, mask_values):
 
     return out
 
-def saveGrid(mask: np.ndarray, filename: str):
+def saveGrid(mask: np.ndarray, filename: str, gridOG: np.ndarray):
     with open(filename, 'wb') as outfile:
         for i in range(61):
             for j in range(61):
                 for k in range(25):
                     temp_row = bytearray(1)
                     for l in range(1):
-                        temp_row[l] = mask[k][j][i]
+                        if gridOG[i][j][k] == True :
+                            temp_row[l] = True
+                        else :
+                            temp_row[l] = mask[k][j][i]
                     outfile.write(temp_row)
 
 
@@ -112,7 +115,7 @@ if __name__ == '__main__':
     for i, filename in enumerate(in_files):
         logging.info(f'Predicting image {filename} ...')
         # img = Image.open(filename)
-        img = load_image(filename)
+        img, gridOG = load_image(filename)
 
         mask = predict_img(net=net,
                            full_img=img,
@@ -124,7 +127,7 @@ if __name__ == '__main__':
             out_filename = out_files[i]
             # result = mask_to_image(mask, mask_values)
             # result.save(out_filename)
-            saveGrid(mask, out_filename)
+            saveGrid(mask, out_filename, gridOG)
             logging.info(f'Mask saved to {out_filename}')
 
         if args.viz:
