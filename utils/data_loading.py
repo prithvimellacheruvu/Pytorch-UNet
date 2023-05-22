@@ -80,6 +80,9 @@ class BasicDataset(Dataset):
             for file in listdir(mask_dir)
             if isfile(join(mask_dir, file)) and not file.startswith(".")
         ]
+        # correspondance of input img & mask to train on
+        self.idsImg = sorted(self.idsImg)
+        self.idsMask = sorted(self.idsMask)
 
         if not self.idsImg:
             raise RuntimeError(

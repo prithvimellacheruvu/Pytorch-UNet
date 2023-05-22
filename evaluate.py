@@ -51,9 +51,10 @@ def evaluate(net, dataloader, device, amp):
                     .permute(0, 4, 1, 2, 3)
                     .float()
                 )
-                # compute the Dice score, ignoring background
+                # [OLD]compute the Dice score, ignoring background
+                # modified to calc loss for only valid class (0) and not occupied class (1)
                 dice_score += multiclass_dice_coeff(
-                    mask_pred[:, 1:], mask_true[:, 1:], reduce_batch_first=False
+                    mask_pred[:, 0], mask_true[:, 0], reduce_batch_first=False
                 )
 
     net.train()
